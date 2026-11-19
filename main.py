@@ -1,63 +1,50 @@
 #!/usr/bin/env python3
-"""news-image-20261118 upgrade entry.
+"""news-image-20261118 entrypoint.
 
-The entry image is a pre-composed 1024x1024 PNG (37 verified stories
-from Wednesday 18 November 2026: 3 leads, 10 cards, 24 briefs, with a
-world map, numbers bar, region and field bars, and a date-check line).
-This script only copies it byte-exact into the harness output directory
-(``MAKEFUN_OUTPUT_DIR``, default ``/output``). It never edits the image.
+Copies the finished entry image (entry.png, stored beside this file) to
+the output directory the harness asks for: $MAKEFUN_OUTPUT_DIR, or
+/output when the variable is unset.
 
-Guards: the source must exist, must be at most 1 MiB (the rules cap),
-and the copy is verified by size before the script reports success.
+Standard library only. No network, no randomness, no timestamps: every
+run writes exactly the same bytes.
 """
+
 import hashlib
 import os
 import shutil
 import sys
-
-ENTRY = "entry.png"
-DEFAULT_OUT = "/output"
-SIZE_CAP = 1048576  # rules cap: 1 MiB
+from pathlib import Path
 
 
-def check_source(src):
-    if not os.path.isfile(src):
-        raise SystemExit(f"missing entry image: {src}")
-    size = os.path.getsize(src)
-    if size > SIZE_CAP:
-        raise SystemExit(
-            f"entry image too large: {size} bytes (cap {SIZE_CAP})")
-    return size
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def check_result(dst, size, digest):
-    if not os.path.isfile(dst):
-        raise SystemExit(f"output was not written: {dst}")
-    if os.path.getsize(dst) != size:
-        raise SystemExit("output size differs from source; copy failed")
-    with open(dst, "rb") as fh:
-        actual = hashlib.sha256(fh.read()).hexdigest()
-    if actual != digest:
-        raise SystemExit("output hash differs from source; copy failed")
+def output_dir() -> Path:
+    """Where the harness wants the entry: env var first, else /output."""
+    raw = os.environ.get("MAKEFUN_OUTPUT_DIR", "").strip()
+    return Path(raw) if raw else Path("/output")
 
 
-def emit(source_dir, out_dir):
-    src = os.path.join(source_dir, ENTRY)
-    size = check_source(src)
-    with open(src, "rb") as fh:
-        digest = hashlib.sha256(fh.read()).hexdigest()
-    os.makedirs(out_dir, exist_ok=True)
-    dst = os.path.join(out_dir, ENTRY)
-    shutil.copyfile(src, dst)
-    check_result(dst, size, digest)
-    return dst, size
-
-
-def main():
-    here = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", DEFAULT_OUT)
-    dst, size = emit(here, out_dir)
-    print(f"wrote {dst} ({size} bytes)")
+def main() -> int:
+    here = Path(__file__).resolve().parent
+    source = here / "entry.png"
+    if not source.is_file():
+        print(f"error: {source} is missing", file=sys.stderr)
+        return 1
+    dest = output_dir() / "entry.png"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, dest)
+    # Verify the copy byte for byte: a partial write must fail loudly
+    # rather than hand the judge a corrupt image.
+    if sha256_file(source) != sha256_file(dest):
+        print(f"error: copy to {dest} does not match {source}",
+              file=sys.stderr)
+        return 1
     return 0
 
 
