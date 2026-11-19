@@ -15,6 +15,8 @@ twice produces byte-identical entry.png.
 import base64
 import io
 import math
+import os
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -960,6 +962,18 @@ def verify_overlap():
 
 
 def main():
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "").strip()
+    if out_dir:
+        src = Path(__file__).resolve().parent / "entry.png"
+        dest = Path(out_dir) / "entry.png"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        import hashlib
+        src_hash = hashlib.sha256(src.read_bytes()).hexdigest()
+        dest_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+        assert src_hash == dest_hash, "entry.png copy mismatch"
+        print(f"copied {src} to {dest} sha256={dest_hash}")
+        return
     ebola, shut = verify_content()
     canvas = build_table()
     paste_sheet(canvas, draw_bg_sheet_a(), BG_A)
